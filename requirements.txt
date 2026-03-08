@@ -1,0 +1,31 @@
+# Core
+fastapi
+uvicorn[standard]
+python-multipart
+jinja2
+python-dotenv
+
+# Data & ML
+pandas
+scikit-learn
+numpy
+reportlab
+openpyxl
+xlrd
+
+# File parsing
+python-docx
+pdfplumber
+tabula-py
+
+# Database — async PostgreSQL with connection pooling
+asyncpg
+
+# Rate limiting
+slowapi
+
+# Monitoring
+sentry-sdk[fastapi]
+
+# Already included but explicit
+starlette

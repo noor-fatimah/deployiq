@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+temp_files/
+deployiq.log
+modelguard.log
+*.db
+.DS_Store

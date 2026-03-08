@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DeployIQ — Deployment Risk Validator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --navy:    #0D1B2A;
+      --blue:    #1565C0;
+      --accent:  #00B4D8;
+      --green:   #00C853;
+      --amber:   #FFB300;
+      --red:     #FF1744;
+      --white:   #FFFFFF;
+      --surface: #111C2B;
+      --card:    #162234;
+      --border:  rgba(0,180,216,0.18);
+      --text:    #CBD5E1;
+      --muted:   #64748B;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--navy);
+      color: var(--white);
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* ── NOISE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 200px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── GRID BACKGROUND ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,180,216,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,180,216,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 48px;
+      background: rgba(13,27,42,0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+    }
+
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em;
+    }
+
+    .nav-logo .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 8px var(--accent); }
+      50% { box-shadow: 0 0 18px var(--accent), 0 0 30px rgba(0,180,216,0.3); }
+    }
+
+    .nav-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      background: rgba(0,180,216,0.1);
+      border: 1px solid rgba(0,180,216,0.3);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 4px;
+      letter-spacing: 0.08em;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 120px 24px 80px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 700px; height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(21,101,192,0.18) 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .hero-tag {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem; letter-spacing: 0.12em;
+      color: var(--accent);
+      background: rgba(0,180,216,0.08);
+      border: 1px solid rgba(0,180,216,0.25);
+      padding: 6px 16px; border-radius: 100px;
+      margin-bottom: 32px;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .hero-tag::before {
+      content: '';
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4.2rem);
+      font-weight: 700;
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+      margin-bottom: 24px;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    h1 .highlight {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--blue) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: 1.15rem; color: var(--text);
+      max-width: 580px; line-height: 1.65;
+      margin-bottom: 52px;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    /* ── UPLOAD CARD ── */
+    .upload-card {
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 44px 48px;
+      width: 100%; max-width: 520px;
+      animation: fadeUp 0.6s 0.3s ease both;
+      box-shadow:
+        0 0 0 1px rgba(0,180,216,0.06),
+        0 32px 80px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .upload-card::before {
+      content: '';
+      position: absolute; inset: -1px;
+      border-radius: 21px;
+      background: linear-gradient(135deg, rgba(0,180,216,0.2), transparent 50%);
+      z-index: -1;
+    }
+
+    .card-title {
+      font-size: 1.15rem; font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .card-desc {
+      font-size: 0.88rem; color: var(--muted);
+      margin-bottom: 28px; line-height: 1.5;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed rgba(0,180,216,0.3);
+      border-radius: 12px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      background: rgba(0,180,216,0.03);
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0,180,216,0.07);
+      transform: translateY(-2px);
+    }
+
+    .drop-icon {
+      font-size: 2.2rem; margin-bottom: 12px;
+      display: block;
+    }
+
+    .drop-label {
+      font-size: 0.95rem; font-weight: 500;
+      color: var(--white); margin-bottom: 6px;
+    }
+
+    .drop-hint {
+      font-size: 0.8rem; color: var(--muted);
+    }
+
+    .drop-hint span {
+      color: var(--accent); font-weight: 500;
+    }
+
+    input[type="file"] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+
+    .file-selected {
+      display: none;
+      margin-top: 14px;
+      background: rgba(0,200,83,0.08);
+      border: 1px solid rgba(0,200,83,0.25);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: var(--green);
+      font-family: 'DM Mono', monospace;
+      align-items: center; gap: 8px;
+    }
+
+    .file-selected.visible { display: flex; }
+
+    /* Requirements pill */
+    .requirements {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin-top: 18px; margin-bottom: 28px;
+    }
+
+    .req-pill {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem; letter-spacing: 0.06em;
+      padding: 4px 10px; border-radius: 5px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+
+    /* Submit button */
+    .btn-generate {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #1565C0 0%, #0288D1 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1rem; font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+      letter-spacing: -0.01em;
+    }
+
+    .btn-generate::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .btn-generate:hover::before { opacity: 1; }
+    .btn-generate:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(21,101,192,0.45); }
+    .btn-generate:active { transform: translateY(0); }
+    .btn-generate:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btn-inner { display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+    /* Price note */
+    .price-note {
+      margin-top: 18px;
+      font-size: 0.82rem; color: var(--muted);
+      text-align: center;
+    }
+
+    .price-note strong { color: var(--white); }
+
+    /* Loading overlay */
+    .loading {
+      display: none;
+      position: absolute; inset: 0;
+      background: rgba(22, 34, 52, 0.95);
+      border-radius: 20px;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 18px;
+      z-index: 10;
+    }
+
+    .loading.active { display: flex; }
+
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(0,180,216,0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-size: 0.92rem; color: var(--text);
+      font-family: 'DM Mono', monospace;
+    }
+
+    /* ── FEATURES STRIP ── */
+    .features {
+      position: relative; z-index: 1;
+      padding: 80px 48px;
+      max-width: 1100px; margin: 0 auto;
+    }
+
+    .features-label {
+      text-align: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem; letter-spacing: 0.12em;
+      color: var(--accent); margin-bottom: 48px;
+      text-transform: uppercase;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px 24px;
+      transition: all 0.25s ease;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(0,180,216,0.4);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+    }
+
+    .feature-icon {
+      font-size: 1.6rem; margin-bottom: 14px; display: block;
+    }
+
+    .feature-title {
+      font-size: 0.95rem; font-weight: 600;
+      margin-bottom: 8px; letter-spacing: -0.01em;
+    }
+
+    .feature-desc {
+      font-size: 0.82rem; color: var(--muted); line-height: 1.55;
+    }
+
+    /* ── REPORT PREVIEW STRIP ── */
+    .sections-strip {
+      position: relative; z-index: 1;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 60px 48px;
+    }
+
+    .strip-inner { max-width: 1000px; margin: 0 auto; }
+
+    .strip-title {
+      text-align: center;
+      font-size: 1.5rem; font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 36px;
+    }
+
+    .sections-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .section-item {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 0.88rem; font-weight: 500;
+    }
+
+    .section-num {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      min-width: 22px;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative; z-index: 1;
+      padding: 36px 48px;
+      text-align: center;
+      border-top: 1px solid var(--border);
+    }
+
+    footer p {
+      font-size: 0.82rem; color: var(--muted);
+    }
+
+    footer strong { color: var(--text); }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── ERROR BOX ── */
+    .error-box {
+      display: none;
+      margin-top: 14px;
+      background: rgba(255,23,68,0.08);
+      border: 1px solid rgba(255,23,68,0.3);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      color: #FF6B6B;
+    }
+
+    .error-box.visible { display: block; }
+
+    @media (max-width: 600px) {
+      nav { padding: 14px 20px; }
+      .features, .sections-strip { padding: 60px 20px; }
+      .upload-card { padding: 28px 22px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">
+      <div class="dot"></div>
+      DeployIQ
+    </div>
+    <div class="nav-badge">MVP v1.0</div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+
+    <div class="hero-tag">AI Startup Due-Diligence Tool</div>
+
+    <h1>
+      Know if Your AI<br/>
+      is <span class="highlight">Ready to Ship</span>
+    </h1>
+
+    <p class="hero-sub">
+      Upload your model's predictions (CSV, Excel, PDF, Word, JSON, or TXT) and receive a professional,
+      investor-ready deployment risk report in seconds — covering performance,
+      bias, class analysis, and certification status.
+    </p>
+
+    <!-- UPLOAD CARD -->
+    <div class="upload-card">
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Uploading file…</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:6px;" id="loadingProgress"></div>
+      </div>
+
+      <div class="card-title">Generate Your Report</div>
+      <div class="card-desc">Upload your model predictions (CSV, Excel, PDF, Word, JSON, TXT) to generate your report</div>
+
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".csv,.tsv,.xlsx,.xls,.xlsm,.pdf,.docx,.doc,.txt,.json" />
+        <span class="drop-icon">📊</span>
+        <div class="drop-label">Drop your file here (CSV, Excel, PDF, Word, JSON, TXT)</div>
+        <div class="drop-hint">or <span>click to browse</span></div>
+      </div>
+
+      <div class="file-selected" id="fileSelected">
+        <span>✔</span>
+        <span id="fileName">file.csv / .xlsx / .pdf / .docx</span>
+      </div>
+
+      <div class="requirements">
+        <span class="req-pill">CSV · Excel · PDF · Word · JSON · TXT</span>
+        <span class="req-pill">y_true column</span>
+        <span class="req-pill">y_pred column</span>
+        <span class="req-pill">Binary or Multi-class</span>
+      </div>
+
+      <button class="btn-generate" id="submitBtn" disabled onclick="submitForm()">
+        <div class="btn-inner">
+          <span>⚡</span>
+          <span>Generate Deployment Report</span>
+        </div>
+      </button>
+
+      <div class="price-note">
+        One-time payment · <strong>Instant PDF download</strong> · No subscription
+      </div>
+
+      <div class="error-box" id="errorBox"></div>
+    </div>
+  </section>
+
+  <!-- REPORT SECTIONS STRIP -->
+  <section class="sections-strip">
+    <div class="strip-inner">
+      <div class="strip-title">Everything in Your Report</div>
+      <div class="sections-list">
+        <div class="section-item"><span class="section-num">01</span> Executive Summary</div>
+        <div class="section-item"><span class="section-num">02</span> Model Overview</div>
+        <div class="section-item"><span class="section-num">03</span> Dataset Analysis</div>
+        <div class="section-item"><span class="section-num">04</span> Performance Breakdown</div>
+        <div class="section-item"><span class="section-num">05</span> Class-Level Analysis</div>
+        <div class="section-item"><span class="section-num">06</span> Risk Assessment</div>
+        <div class="section-item"><span class="section-num">07</span> Deployment Certification</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <div class="features-label">Why AI Startups Use DeployIQ</div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">🛡️</span>
+        <div class="feature-title">Investor-Ready Format</div>
+        <div class="feature-desc">Structured PDF reports that satisfy AI due-diligence requirements from VCs and enterprise buyers.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">⚡</span>
+        <div class="feature-title">Instant Analysis</div>
+        <div class="feature-desc">Upload a CSV, Excel, PDF, Word, JSON, or TXT file — get your report in under 10 seconds. No setup, no integration required.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔍</span>
+        <div class="feature-title">Bias & Imbalance Detection</div>
+        <div class="feature-desc">Automatically flags class imbalance, recall gaps, and accuracy-vs-reality divergence.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📈</span>
+        <div class="feature-title">12+ Metrics</div>
+        <div class="feature-desc">Accuracy, F1, MCC, Cohen's Kappa, ROC-AUC, specificity, and more — with interpretation.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🎯</span>
+        <div class="feature-title">Risk Certification</div>
+        <div class="feature-desc">Clear deployment certification: Approved / Conditional / Blocked — with justification.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔒</span>
+        <div class="feature-title">Private & Secure</div>
+        <div class="feature-desc">Your data is processed and immediately deleted. We never store your model predictions.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>
+      <strong>DeployIQ</strong> — Professional AI Deployment Validation ·
+      Built for AI Startups · $19 per report
+    </p>
+  </footer>
+
+  <script>
+    const SUPPORTED_EXTS = new Set(['.csv','.tsv','.xlsx','.xls','.xlsm','.pdf','.docx','.doc','.txt','.json']);
+    function isSupported(name) {
+      const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
+      return SUPPORTED_EXTS.has(ext);
+    }
+
+    const fileInput  = document.getElementById('fileInput');
+    const dropZone   = document.getElementById('dropZone');
+    const fileSelected = document.getElementById('fileSelected');
+    const fileName   = document.getElementById('fileName');
+    const submitBtn  = document.getElementById('submitBtn');
+    const loading    = document.getElementById('loading');
+    const errorBox   = document.getElementById('errorBox');
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) {
+        fileName.textContent = fileInput.files[0].name;
+        fileSelected.classList.add('visible');
+        submitBtn.disabled = false;
+        errorBox.classList.remove('visible');
+      }
+    });
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length && isSupported(files[0].name)) {
+        fileInput.files = files;
+        fileName.textContent = files[0].name;
+        fileSelected.classList.add('visible');
+        submitBtn.disabled = false;
+      }
+    });
+
+    const loadingText     = document.getElementById('loadingText');
+    const loadingProgress = document.getElementById('loadingProgress');
+
+    const PROGRESS_STEPS = [
+      'Uploading file…',
+      'Parsing file…',
+      'Computing metrics…',
+      'Assessing risk…',
+      'Generating report…',
+    ];
+
+    function setProgress(msg) {
+      if (loadingText)     loadingText.textContent     = msg;
+      if (loadingProgress) loadingProgress.textContent = '';
+    }
+
+    // Cycle through progress messages while waiting (fix #10)
+    function startProgressCycle() {
+      let i = 0;
+      setProgress(PROGRESS_STEPS[i]);
+      return setInterval(() => {
+        i = Math.min(i + 1, PROGRESS_STEPS.length - 1);
+        setProgress(PROGRESS_STEPS[i]);
+      }, 2200);
+    }
+
+    async function submitForm() {
+      if (!fileInput.files.length) return;
+
+      loading.classList.add('active');
+      submitBtn.disabled = true;
+      errorBox.classList.remove('visible');
+
+      const progressTimer = startProgressCycle();
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      try {
+        const res = await fetch('/evaluate', {
+          method: 'POST',
+          body: formData,
+        });
+
+        clearInterval(progressTimer);
+
+        if (!res.ok) {
+          // Fix #11 — parse server error detail cleanly
+          let detail = 'Something went wrong. Please try again.';
+          try {
+            const json = await res.json();
+            detail = json.detail || detail;
+          } catch (_) {}
+          throw new Error(detail);
+        }
+
+        setProgress('Report ready — downloading…');
+
+        const blob     = await res.blob();
+        const url      = URL.createObjectURL(blob);
+        const a        = document.createElement('a');
+        const ts       = new Date().toISOString().slice(0,10);
+        a.href         = url;
+        a.download     = `DeployIQ_Report_${ts}.pdf`;  // fix #12
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+      } catch (err) {
+        clearInterval(progressTimer);
+        errorBox.textContent = '⚠ ' + (err.message || 'Something went wrong. Please try again.');
+        errorBox.classList.add('visible');
+      } finally {
+        loading.classList.remove('active');
+        submitBtn.disabled = false;
+        setProgress('Uploading file…');
+      }
+    }
+  </script>
+
+</body>
+</html>
