@@ -1,4 +1,4 @@
-# main.py — DeployIQ v3.1 (Production-Ready)
+# main.py — DeployIQ v3.1 (Production-Ready + SaaS Layer)
 from dotenv import load_dotenv
 load_dotenv()  
 import os
@@ -30,7 +30,10 @@ from risk_engine import assess_risk
 from pdf_generator import generate_pdf
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 
-# ── Logging with rotation (fix #15) ───────────────────────────────────────────
+# ── SaaS Auth Middleware (NEW) ─────────────────────────────────────────────────
+from saas_middleware import SaaSAuthMiddleware
+
+# ── Logging with rotation ──────────────────────────────────────────────────────
 _file_handler = logging.handlers.RotatingFileHandler(
     "deployiq.log", maxBytes=10 * 1024 * 1024, backupCount=3
 )
@@ -41,13 +44,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Sentry — 10% sample rate in production (fix #14) ──────────────────────────
+# ── Sentry — 10% sample rate in production ────────────────────────────────────
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[StarletteIntegration(), FastApiIntegration()],
-        traces_sample_rate=0.1,   # was 1.0 — would blow free tier
+        traces_sample_rate=0.1,
     )
     logger.info("Sentry monitoring enabled")
 
@@ -55,7 +58,7 @@ if SENTRY_DSN:
 MAX_FILE_SIZE_MB    = int(os.getenv("MAX_FILE_SIZE_MB", 20))
 MAX_FILE_SIZE       = MAX_FILE_SIZE_MB * 1024 * 1024
 PROCESSING_TIMEOUT  = int(os.getenv("PROCESSING_TIMEOUT", 90))
-ADMIN_KEY           = os.getenv("ADMIN_KEY", "")          # fix #9
+ADMIN_KEY           = os.getenv("ADMIN_KEY", "")
 TEMP_DIR            = "temp_files"
 ACCEPTED_EXTENSIONS_STR = ", ".join(sorted(SUPPORTED_EXTENSIONS))
 
@@ -64,14 +67,10 @@ ACCEPTED_EXTENSIONS_STR = ", ".join(sorted(SUPPORTED_EXTENSIONS))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(TEMP_DIR, exist_ok=True)
-
-    # Fix #4 — clean up any leftover temp files from previous crashed run
     _purge_stale_temps()
-
-    await init_db()                          # fix #2 — properly awaited
+    await init_db()
     logger.info("DeployIQ started ✓  (PostgreSQL pool ready)")
     yield
-
     await close_pool()
     logger.info("DeployIQ shutdown — pool closed")
 
@@ -84,12 +83,14 @@ app = FastAPI(
     description="AI Model Deployment Risk Validator",
     version="3.1.0",
     lifespan=lifespan,
-    # Hide internal details from OpenAPI docs in production
     docs_url=None if os.getenv("ENV") == "production" else "/docs",
     redoc_url=None if os.getenv("ENV") == "production" else "/redoc",
 )
 
-# Fix #7 — CORS middleware
+# ── SaaS Auth Middleware (NEW — must be added before other middleware) ─────────
+app.add_middleware(SaaSAuthMiddleware)
+
+# ── CORS middleware ────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
@@ -104,7 +105,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 templates = Jinja2Templates(directory="templates")
 
 
-# ── Auth dependency for admin endpoints (fix #9) ──────────────────────────────
+# ── Auth dependency for admin endpoints ───────────────────────────────────────
 def require_admin(request: Request):
     if not ADMIN_KEY:
         return   # no key set → open (dev mode)
@@ -113,7 +114,7 @@ def require_admin(request: Request):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-# ── robots.txt (fix #16) ───────────────────────────────────────────────────────
+# ── robots.txt ────────────────────────────────────────────────────────────────
 @app.get("/robots.txt", include_in_schema=False)
 async def robots():
     from fastapi.responses import PlainTextResponse
@@ -132,15 +133,15 @@ async def health():
     }
 
 
-# ── Stats — admin-only (fix #9) ────────────────────────────────────────────────
+# ── Stats — admin-only ────────────────────────────────────────────────────────
 @app.get("/stats")
 async def stats(_: None = Depends(require_admin)):
     from database import get_stats
     return await get_stats()
 
 
-# ── Status polling endpoint (fix #10) ─────────────────────────────────────────
-_job_status: dict[str, dict] = {}   # in-memory; fine for single-node
+# ── Status polling endpoint ───────────────────────────────────────────────────
+_job_status: dict[str, dict] = {}
 
 @app.get("/status/{job_id}")
 async def job_status(job_id: str):
@@ -165,12 +166,12 @@ async def evaluate(request: Request, file: UploadFile = File(...)):
     client_ip  = get_remote_address(request)
     start_time = time.time()
 
-    # Fix #3 — sanitise filename to prevent path traversal
+    # Sanitise filename to prevent path traversal
     raw_name = file.filename or "upload"
     filename = os.path.basename(raw_name).replace("..", "").strip() or "upload"
     ext      = os.path.splitext(filename.lower())[1]
 
-    # Fix #12 — timestamped PDF filename
+    # Timestamped PDF filename
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     pdf_download_name = f"DeployIQ_Report_{ts}.pdf"
 
@@ -181,7 +182,7 @@ async def evaluate(request: Request, file: UploadFile = File(...)):
             detail=f"Unsupported file type '{ext}'. Accepted: {ACCEPTED_EXTENSIONS_STR}",
         )
 
-    # ── 2. Stream file into memory (fix #6 — no disk race condition) ──────────
+    # ── 2. Stream file into memory ─────────────────────────────────────────────
     file_bytes = io.BytesIO()
     file_size  = 0
     try:
@@ -199,10 +200,10 @@ async def evaluate(request: Request, file: UploadFile = File(...)):
     file_bytes.seek(0)
     logger.info(f"[{unique_id}] Received: {filename} ({file_size/1024:.1f}KB) from {client_ip}")
 
-    # ── 3. Log to PostgreSQL (fix #1 — properly awaited) ──────────────────────
+    # ── 3. Log to PostgreSQL ───────────────────────────────────────────────────
     await log_request(unique_id, filename, file_size, client_ip, file_type=ext.lstrip("."))
 
-    # ── 4. Update status to 'processing' for polling (fix #10) ───────────────
+    # ── 4. Update status to 'processing' for polling ──────────────────────────
     _job_status[unique_id] = {"status": "processing", "progress": "Parsing file..."}
 
     # ── 5. Process with timeout ────────────────────────────────────────────────
@@ -213,25 +214,24 @@ async def evaluate(request: Request, file: UploadFile = File(...)):
         )
     except asyncio.TimeoutError:
         _job_status.pop(unique_id, None)
-        await update_request_status(unique_id, "timeout")   # fix #1
+        await update_request_status(unique_id, "timeout")
         logger.error(f"[{unique_id}] Timed out after {PROCESSING_TIMEOUT}s")
         raise HTTPException(status_code=408, detail="Processing timed out. Try a smaller file.")
     except ValueError as e:
         _job_status.pop(unique_id, None)
-        await update_request_status(unique_id, f"error: {str(e)[:100]}")   # fix #1
+        await update_request_status(unique_id, f"error: {str(e)[:100]}")
         logger.warning(f"[{unique_id}] Validation error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         _job_status.pop(unique_id, None)
-        await update_request_status(unique_id, f"error: internal")         # fix #11
+        await update_request_status(unique_id, f"error: internal")
         logger.error(f"[{unique_id}] Unexpected error: {e}", exc_info=True)
         if SENTRY_DSN:
             sentry_sdk.capture_exception(e)
-        # Fix #11 — never expose internal details to user
         raise HTTPException(status_code=500, detail="Report generation failed. Our team has been notified.")
 
     elapsed = time.time() - start_time
-    await update_request_status(                               # fix #1
+    await update_request_status(
         unique_id, "success",
         task_type=metrics.get("task_type"),
         risk_level=risk_data.get("risk_level"),
@@ -243,7 +243,6 @@ async def evaluate(request: Request, file: UploadFile = File(...)):
         f"Risk: {risk_data.get('risk_level')} | Type: {metrics.get('task_type')}"
     )
 
-    # Fix #6 — stream PDF from memory, no temp file needed
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -256,23 +255,18 @@ async def _process_file(file_bytes: io.BytesIO, filename: str, job_id: str):
     """Parse, evaluate, assess risk, generate PDF — all in thread pool."""
     loop = asyncio.get_event_loop()
 
-    # Step 1 — parse
     _job_status[job_id] = {"status": "processing", "progress": "Parsing file..."}
     df, _ftype = await loop.run_in_executor(None, parse_file_bytes, file_bytes, filename)
 
-    # Step 2 — evaluate
     _job_status[job_id] = {"status": "processing", "progress": "Computing metrics..."}
     metrics = await loop.run_in_executor(None, evaluate_model, df)
 
-    # Fix #13 — sanity check: make sure we got real metrics back
     if metrics.get("dataset_size", 0) < 2:
         raise ValueError("File does not appear to contain valid model prediction data.")
 
-    # Step 3 — risk assessment
     _job_status[job_id] = {"status": "processing", "progress": "Assessing risk..."}
     risk_data = await loop.run_in_executor(None, assess_risk, metrics)
 
-    # Step 4 — generate PDF into memory (fix #6)
     _job_status[job_id] = {"status": "processing", "progress": "Generating report..."}
     pdf_bytes = await loop.run_in_executor(None, generate_pdf_bytes, metrics, risk_data)
 
@@ -296,7 +290,7 @@ def parse_file_bytes(file_bytes: io.BytesIO, filename: str):
 
 
 def generate_pdf_bytes(metrics, risk_data) -> bytes:
-    """Generate PDF into memory and return raw bytes (fix #6)."""
+    """Generate PDF into memory and return raw bytes."""
     buf = io.BytesIO()
     generate_pdf(metrics, risk_data, buf)
     buf.seek(0)
@@ -304,9 +298,9 @@ def generate_pdf_bytes(metrics, risk_data) -> bytes:
 
 
 def _purge_stale_temps():
-    """Delete any temp files left over from a previous crash (fix #4)."""
+    """Delete any temp files left over from a previous crash."""
     try:
-        cutoff = time.time() - 600   # older than 10 minutes
+        cutoff = time.time() - 600
         for fname in os.listdir(TEMP_DIR):
             fpath = os.path.join(TEMP_DIR, fname)
             try:

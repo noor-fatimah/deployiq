@@ -29,3 +29,7 @@ sentry-sdk[fastapi]
 
 # Already included but explicit
 starlette
+
+asyncpg
+slowapi
+pydantic[email]
