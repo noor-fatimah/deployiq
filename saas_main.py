@@ -168,8 +168,8 @@ class SignupRequest(BaseModel):
 # ── Landing page ───────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
-    return templates.TemplateResponse("landing.html", {
-        "request": request,
+
+    return templates.TemplateResponse(request, "landing.html", {
         "agent_url": DEPLOYIQ_AGENT_URL,
         "trial_days": TRIAL_DAYS,
         "trial_reports": TRIAL_MAX_REPORTS,
@@ -431,7 +431,7 @@ async def upgrade_redirect(email: str = ""):
 # ── GET /success ───────────────────────────────────────────────────────────────
 @app.get("/success", response_class=HTMLResponse)
 async def payment_success(request: Request):
-    return templates.TemplateResponse("success.html", {"request": request, "agent_url": DEPLOYIQ_AGENT_URL})
+    return templates.TemplateResponse(request, "success.html", {"agent_url": DEPLOYIQ_AGENT_URL})
 
 
 # ── GET /health ────────────────────────────────────────────────────────────────
